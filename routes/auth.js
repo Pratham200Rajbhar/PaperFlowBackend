@@ -8,9 +8,14 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this-in-production';
 
 const generateToken = (userId) => {
-    return jwt.sign({ userId }, JWT_SECRET, { 
-        expiresIn: process.env.JWT_EXPIRES_IN || '30d'
-    });
+    const expiresIn = process.env.JWT_EXPIRES_IN || '30d';
+    
+    // If "never" is set, don't include expiresIn option (token never expires)
+    if (expiresIn.toLowerCase() === 'never') {
+        return jwt.sign({ userId }, JWT_SECRET);
+    }
+    
+    return jwt.sign({ userId }, JWT_SECRET, { expiresIn });
 };
 
 const authenticate = async (req, res, next) => {

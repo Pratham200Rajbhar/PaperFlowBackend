@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: doc-collection-backend-dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - MONGO_URI=mongodb+srv://prathamai112005_db_user:apple@cluster0.up5ndfq.mongodb.net/doc_collection_db?retryWrites=true&w=majority
+      - JWT_SECRET=paperflow-secure-jwt-secret-key-2024
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - uploads_data:/app/uploads
+    networks:
+      - doc-collection-network
+
+volumes:
+  uploads_data:
+    driver: local
+
+networks:
+  doc-collection-network:
+    driver: bridge
