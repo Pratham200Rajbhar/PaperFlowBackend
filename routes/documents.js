@@ -195,8 +195,10 @@ router.get('/list', authenticate, async (req, res) => {
     try {
         const user = req.user;
         const page = parseInt(req.query.page) || 1;
-        const limit = Math.min(parseInt(req.query.limit) || 20, 100);
-        const skip = (page - 1) * limit;
+        // If limit is 0 or not provided, fetch all documents; otherwise use the provided limit
+        const limitParam = parseInt(req.query.limit);
+        const limit = limitParam === 0 ? 0 : (limitParam || 20);
+        const skip = limit === 0 ? 0 : (page - 1) * limit;
 
         const { category, search, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
 
@@ -209,12 +211,18 @@ router.get('/list', authenticate, async (req, res) => {
         const sort = {};
         sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
+        // Build query - if limit is 0, don't apply limit (fetch all)
+        let query = Document.find(filter)
+            .select('-encrypted_blob')
+            .sort(sort)
+            .skip(skip);
+        
+        if (limit > 0) {
+            query = query.limit(limit);
+        }
+
         const [documents, total] = await Promise.all([
-            Document.find(filter)
-                .select('-encrypted_blob')
-                .sort(sort)
-                .skip(skip)
-                .limit(limit),
+            query,
             Document.countDocuments(filter)
         ]);
 
@@ -299,7 +307,7 @@ router.get('/list', authenticate, async (req, res) => {
                 count: filteredDocuments.length,
                 totalDocuments: total
             },
-            categories: await Document.distinct('category', { userId: user._id })
+            categories: await Document.distinct('category', { user_id: user._id })
         });
 
     } catch (error) {
@@ -349,6 +357,9 @@ router.get('/:documentId', authenticate, async (req, res) => {
             description: metadata.description || '',
             category: document.category,
             tags: document.tags,
+            size: document.fileSize,
+            mimeType: document.mimeType,
+            documentType: metadata.documentType || '',
             file: {
                 originalName: document.originalFilename,
                 mimeType: document.mimeType,
