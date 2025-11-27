@@ -44,27 +44,48 @@ app.use(requestLogger());
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/doc_collection_mobile';
 
-// MongoDB connection with serverless-optimized settings
-mongoose.connect(MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-    serverSelectionTimeoutMS: 30000,
-    socketTimeoutMS: 45000,
-    maxPoolSize: 10,
-    minPoolSize: 1,
-    maxIdleTimeMS: 30000,
-    bufferCommands: false,
-})
-    .then(() => console.log('✅ Connected to MongoDB'))
-    .catch(err => console.error('❌ MongoDB Connection Error:', err));
+// MongoDB connection promise for serverless environments
+let isConnected = false;
+
+const connectDB = async () => {
+    if (isConnected && mongoose.connection.readyState === 1) {
+        return;
+    }
+    
+    try {
+        await mongoose.connect(MONGO_URI, {
+            serverSelectionTimeoutMS: 30000,
+            socketTimeoutMS: 45000,
+            maxPoolSize: 10,
+            minPoolSize: 1,
+        });
+        isConnected = true;
+        console.log('✅ Connected to MongoDB');
+    } catch (err) {
+        console.error('❌ MongoDB Connection Error:', err);
+        throw err;
+    }
+};
 
 // Handle MongoDB connection errors
 mongoose.connection.on('error', err => {
     console.error('MongoDB connection error:', err);
+    isConnected = false;
 });
 
 mongoose.connection.on('disconnected', () => {
     console.log('MongoDB disconnected');
+    isConnected = false;
+});
+
+// Middleware to ensure DB connection before handling requests
+app.use(async (req, res, next) => {
+    try {
+        await connectDB();
+        next();
+    } catch (err) {
+        res.status(503).json({ error: 'Database connection failed' });
+    }
 });
 
 app.use('/api/auth', authRoutes.router);
