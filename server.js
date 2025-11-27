@@ -14,13 +14,18 @@ const documentRoutes = require('./routes/documents');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust proxy - required for Vercel/cloud deployments behind reverse proxies
+app.set('trust proxy', 1);
+
 app.use(helmet());
 app.use(compression());
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
-  message: 'Too many requests from this IP, please try again later.'
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 app.use('/api/', limiter);
 
@@ -39,12 +44,28 @@ app.use(requestLogger());
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/doc_collection_mobile';
 
+// MongoDB connection with serverless-optimized settings
 mongoose.connect(MONGO_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 30000,
+    socketTimeoutMS: 45000,
+    maxPoolSize: 10,
+    minPoolSize: 1,
+    maxIdleTimeMS: 30000,
+    bufferCommands: false,
 })
     .then(() => console.log('✅ Connected to MongoDB'))
     .catch(err => console.error('❌ MongoDB Connection Error:', err));
+
+// Handle MongoDB connection errors
+mongoose.connection.on('error', err => {
+    console.error('MongoDB connection error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+    console.log('MongoDB disconnected');
+});
 
 app.use('/api/auth', authRoutes.router);
 app.use('/api/documents', documentRoutes);
