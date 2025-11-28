@@ -10,11 +10,24 @@ const { authenticate } = require('./auth');
 
 const router = express.Router();
 
+// Use /tmp for serverless environments (AWS Lambda, Vercel, etc.), otherwise use local uploads folder
+const getUploadBasePath = () => {
+    // Check if running in serverless environment
+    if (process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.VERCEL || process.env.SERVERLESS) {
+        return '/tmp/uploads';
+    }
+    return path.join(__dirname, '..', 'uploads');
+};
+
 const storage = multer.diskStorage({
     destination: async (req, file, cb) => {
-        const uploadDir = path.join(__dirname, '..', 'uploads', req.user._id);
-        await fs.mkdir(uploadDir, { recursive: true });
-        cb(null, uploadDir);
+        try {
+            const uploadDir = path.join(getUploadBasePath(), req.user._id.toString());
+            await fs.mkdir(uploadDir, { recursive: true });
+            cb(null, uploadDir);
+        } catch (error) {
+            cb(error, null);
+        }
     },
     filename: (req, file, cb) => {
         cb(null, `${uuidv4()}${path.extname(file.originalname)}`);
