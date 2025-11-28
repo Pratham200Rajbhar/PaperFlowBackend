@@ -379,6 +379,84 @@ router.get('/:documentId', authenticate, async (req, res) => {
     }
 });
 
+// Thumbnail endpoint - returns smaller, compressed version for faster loading
+router.get('/:documentId/thumbnail', authenticate, async (req, res) => {
+    try {
+        const user = req.user;
+        const size = parseInt(req.query.size) || 128; // Default 128px
+        const maxSize = Math.min(size, 256); // Cap at 256px for security
+        
+        const document = await Document.findOne({
+            _id: req.params.documentId,
+            user_id: user._id
+        });
+
+        if (!document) {
+            return res.status(404).json({
+                error: 'Document not found'
+            });
+        }
+
+        if (!document.encrypted_blob) {
+            return res.status(500).json({
+                error: 'Document data is missing'
+            });
+        }
+
+        // Only generate thumbnails for images
+        const imageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/bmp'];
+        if (!imageTypes.includes(document.mimeType)) {
+            // For non-images, return 204 No Content - client should use placeholder
+            return res.status(204).send();
+        }
+
+        const encryptionKey = user.security?.encryptionKey || user._id;
+        let decryptedData;
+        
+        try {
+            decryptedData = decryptFile(document.encrypted_blob, encryptionKey);
+        } catch (err) {
+            console.error(`Failed to decrypt document ${document._id}:`, err.message);
+            return res.status(500).json({
+                error: 'Document cannot be decrypted'
+            });
+        }
+
+        // Try to use sharp for image resizing if available
+        try {
+            const sharp = require('sharp');
+            const thumbnail = await sharp(decryptedData)
+                .resize(maxSize, maxSize, {
+                    fit: 'cover',
+                    position: 'center'
+                })
+                .jpeg({ quality: 60, progressive: true }) // Low quality for speed
+                .toBuffer();
+            
+            res.setHeader('Content-Type', 'image/jpeg');
+            res.setHeader('Content-Length', thumbnail.length);
+            res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
+            return res.send(thumbnail);
+        } catch (sharpError) {
+            // Sharp not available, return original (smaller files only)
+            if (decryptedData.length > 500 * 1024) { // If larger than 500KB
+                return res.status(204).send(); // Client should use placeholder
+            }
+            
+            res.setHeader('Content-Type', document.mimeType);
+            res.setHeader('Content-Length', decryptedData.length);
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+            return res.send(decryptedData);
+        }
+
+    } catch (error) {
+        console.error('Thumbnail generation error:', error);
+        res.status(500).json({
+            error: 'Failed to generate thumbnail'
+        });
+    }
+});
+
 router.get('/:documentId/download', authenticate, async (req, res) => {
     try {
         const user = req.user;
